@@ -74,7 +74,7 @@ Asterisk/FreePBX остаётся вне Docker (systemd, уже развёрн�
 
     ssh root@ваш-сервер
     cd ~
-    git clone ваша-ссылка-на-репозиторий aitaxassistent
+    git clone https://github.com/dechurch213-collab/aitaxassistent
 
 Проверьте, что файлы на месте:
 
