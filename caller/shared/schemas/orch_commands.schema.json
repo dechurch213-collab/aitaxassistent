@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OrchestratorCommands",
+  "description": "C3: Команды orchestrator -> media-gateway (WS)",
+  "type": "object",
+  "required": ["command", "session_id"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": ["speak", "clear_queue", "transfer", "hangup", "play_tone", "set_state"]
+    },
+    "session_id": {"type": "string"},
+    "data": {
+      "type": ["object", "null"],
+      "properties": {
+        "text": {"type": "string"},
+        "lang": {"type": "string", "enum": ["ru", "kk"]},
+        "voice_id": {"type": "string"},
+        "speed": {"type": "number"},
+        "interrupt": {"type": "boolean"},
+        "reason": {
+          "type": "string",
+          "enum": [
+            "stt_low_confidence",
+            "rag_no_match",
+            "llm_low_confidence",
+            "llm_unavailable",
+            "citation_invalid",
+            "clarification_limit",
+            "policy_dispute",
+            "completed"
+          ]
+        },
+        "queue": {"type": "string"},
+        "announce": {"type": "string"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"command": {"const": "speak"}}},
+      "then": {
+        "properties": {
+          "data": {
+            "required": ["text", "lang"],
+            "properties": {
+              "text": {"type": "string", "minLength": 1},
+              "lang": {"type": "string", "enum": ["ru", "kk"]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"command": {"const": "transfer"}}},
+      "then": {
+        "properties": {
+          "data": {
+            "required": ["reason", "queue"]
+          }
+        }
+      }
+    }
+  ]
+}

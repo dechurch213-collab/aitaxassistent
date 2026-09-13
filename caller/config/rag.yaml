@@ -1,0 +1,34 @@
+# RAG-сервис: embedding, reranker, Qdrant
+
+embedding:
+  model: /models/bge-m3            # или /models/qwen3-embedding-8b
+  device: cpu                      # cpu для BGE-M3; gpu для 8B
+  dimensions: 1024                 # 1024 для BGE-M3; 4096 для Qwen3-Emb-8B
+  normalize: true
+
+reranker:
+  # gpu-4b:   Qwen3-Reranker-4B int8 на RTX 3050 (рекомендуемый старт)
+  # cpu-8b:   Qwen3-Reranker-8B на CPU (1.5-3 с на 20 docs)
+  # cpu-4b:   Qwen3-Reranker-4B на CPU
+  profile: gpu-4b
+  model_path: /models/reranker
+  device: cuda                 # cpu для cpu-8b/cpu-4b профилей
+  max_length: 512
+  instruction: "Rank relevant articles of the Tax Code of the Republic of Kazakhstan (2026) for the given query."
+
+qdrant:
+  url: http://qdrant:6333
+  collection: tax_code_2026
+
+retrieval:
+  top_n_vector: 20                 # векторный поиск
+  top_n_final: 4                   # после rerank, в промпт
+  # retrieval пересчитывается на каждый релевантный запрос
+  # (статический кэш на сессию не используется)
+
+indexing:
+  chunk_mode: article              # 1 статья = 1 точка
+  long_article_split_threshold: 3000  # слов; длинные статьи → под-чанки section
+  keep_hierarchy: true             # главы/разделы в payload
+  keep_cross_references: true      # cross-refs статей в payload
+  languages: [kz, ru]

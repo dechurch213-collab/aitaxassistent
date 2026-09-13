@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RagRetrievalResponse",
+  "description": "C4: Ответ rag-service -> orchestrator",
+  "type": "object",
+  "required": ["session_id", "query", "matched", "results", "retrieval_meta"],
+  "properties": {
+    "session_id": {"type": "string"},
+    "query": {"type": "string"},
+    "matched": {
+      "type": "boolean",
+      "description": "false = max rerank_score < порога; orchestrator решает об эскалации"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["doc_id", "article_number", "chapter_number", "text", "rerank_score"],
+        "properties": {
+          "doc_id": {"type": "string"},
+          "article_number": {"type": "string", "description": "Напр. 259-3"},
+          "chapter_number": {"type": "string"},
+          "chapter_title": {"type": "string"},
+          "article_title": {"type": "string"},
+          "text": {"type": "string"},
+          "vector_score": {"type": "number"},
+          "rerank_score": {"type": "number", "minimum": 0, "maximum": 1},
+          "cross_references": {"type": "array", "items": {"type": "string"}},
+          "chapter_path": {"type": "string"},
+          "chunk_type": {"type": "string", "enum": ["article", "section"]}
+        }
+      }
+    },
+    "retrieval_meta": {
+      "type": "object",
+      "required": ["vector_hits", "embed_ms", "search_ms", "rerank_ms"],
+      "properties": {
+        "vector_hits": {"type": "integer"},
+        "embed_ms": {"type": "integer"},
+        "search_ms": {"type": "integer"},
+        "rerank_ms": {"type": "integer"}
+      }
+    }
+  }
+}
