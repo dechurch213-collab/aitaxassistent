@@ -6,7 +6,7 @@
 
 Документация: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-**Читайте [SETUP_GUIDE.md](SETUP_GUIDE.md) —
+📖 **Не разбираетесь в Docker/Asterisk? Читайте [SETUP_GUIDE.md](SETUP_GUIDE.md) —
 пошаговая инструкция с примерами команд от и до.**
 
 ## Состав
@@ -31,9 +31,10 @@ Asterisk/FreePBX — вне docker (уже развёрнут), см. `telephony
 # 1. Секреты
 cp .env.example .env && vim .env
 
-# 2. Модели (Whisper-FT — ВАШ файнтюн; скрипт тянет остальное)
+# 2. Модели (Kazakh Whisper FT shyngys879 + BGE-M3 + Qwen3-Reranker + Piper)
+pip3 install huggingface_hub ctranslate2 transformers[torch] torch
 bash scripts/fetch_models.sh
-#    → models/whisper/whisper-large-v3-turbo-FT-kzru заменить на свой чекпоинт
+#    → models/whisper/whisper-large-v3-turbo-FT-kzru/ (конвертация в CTranslate2)
 
 # 3. Тексты НК РК 2026 (формат: РАЗДЕЛ/ГЛАВА/СТАТЬЯ — см. indexer/chunker.py)
 #    и индексация:

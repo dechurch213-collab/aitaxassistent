@@ -111,10 +111,15 @@ Asterisk/FreePBX остаётся вне Docker (systemd, уже развёрн�
 
 ## ШАГ 3: Скачать модели (AI-мозги)
 
-Самый долгий шаг (20–40 минут). Сначала поставим загрузчик моделей:
+Самый долгий шаг (20–40 минут). Сначала поставим зависимости для загрузки
+и конвертации моделей:
 
-    pip3 install huggingface_hub
+    pip3 install huggingface_hub ctranslate2 transformers[torch] torch
     # если pip3 нет: apt install -y python3-pip
+
+> `ctranslate2` нужен для конвертации Whisper из формата HuggingFace
+> (safetensors) в формат CTranslate2 (`model.bin`), который требует
+> `faster-whisper`. Конвертация идёт один раз, результат кешируется.
 
 Запускаем загрузку:
 
@@ -128,32 +133,20 @@ Asterisk/FreePBX остаётся вне Docker (systemd, уже развёрн�
 - `models/reranker/` — Qwen3-Reranker-4B (~9 ГБ)
 - `models/piper/` — голоса Piper: `ru_RU-aidar-medium`, `ru_RU-dmitri-medium`,
   `kk_KZ-astana-medium`, `kk_KZ-almaty-medium`
-- `models/whisper/whisper-large-v3-turbo-FT-kzru/` — Whisper large-v3-turbo
-  (базовая версия, ~1.6 ГБ)
+- `models/whisper/whisper-large-v3-turbo-FT-kzru/` — Kazakh Whisper large-v3-turbo
+  (файнтюн shyngys879, конвертация в CTranslate2, ~1.6 ГБ)
 
-ВАЖНО: скрипт качает **базовый** Whisper. Для продакшена замените его на ВАШ
-файнтюн (kz/ru, телефонное качество 8 кГц). Положите ваш чекпоинт в ту же папку:
+### Про Whisper
 
-    ~/aitaxassistent/models/whisper/whisper-large-v3-turbo-FT-kzru/
+Используется файнтюн [shyngys879/kazakh-whisper-large-v3-turbo](https://huggingface.co/shyngys879/kazakh-whisper-large-v3-turbo) — лучшая open-source модель для казахского ASR (WER 11.8% на FLEURS kk). Обучена на 1500+ часах казахской речи поверх Whisper Large-v3 Turbo, поэтому понимает и казахский, и русский. Скрипт скачивает её из HuggingFace и автоматически конвертирует в формат `faster-whisper` (CTranslate2, int8_float16).
 
-Структура (пример):
-```
-whisper-large-v3-turbo-FT-kzru/
-├── config.json
-├── tokenizer.json
-├── model.bin (или эквивалент от вашего файнтюна)
-└── ...остальные файлы чекпоинта
-```
-
-Если файнтюна нет — система будет работать, но хуже понимать казахский и
-невнятную речь (особенно пожилых абонентов).
-
-Проверьте, что всё скачалось:
+Проверьте, что всё скачалось и сконвертировалось:
 
     ls -la models/
     ls -la models/whisper/whisper-large-v3-turbo-FT-kzru/
 
-Папки должны быть непустыми.
+В папке Whisper должен быть `model.bin` (не safetensors — это результат
+конвертации). Папки BGE-M3 / reranker / piper должны быть непустыми.
 
 > Если `kk_KZ-astana-medium.onnx` не скачался (нет в публичном репо) — подложите
 > свой казахский голос Piper в `models/piper/` и пропишите его в `config/tts.yaml`.
@@ -427,7 +420,14 @@ media-gateway и маскируется в аудите; `CALLERID` НЕ пер�
     nvidia-smi                  # GPU виден?
     docker compose logs stt | tail -30
 
-Частые причины: неверный путь к модели, повреждённая модель, нет драйвера.
+Частые причины: неверный путь к модели, повреждённая/неконвертированная
+модель, нет драйвера.
+
+Проверьте, что конвертация прошла (должен быть `model.bin`):
+
+    ls -la models/whisper/whisper-large-v3-turbo-FT-kzru/model.bin
+
+Если `model.bin` отсутствует (конвертация не завершилась) — перескачайте:
 
     rm -rf models/whisper/whisper-large-v3-turbo-FT-kzru
     bash scripts/fetch_models.sh

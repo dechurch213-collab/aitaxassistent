@@ -3,7 +3,7 @@
 
 Стек зафиксирован (не обсуждается):
 - Телефония: Asterisk/FreePBX (Debian 12, провайдер КТК), ARI + ExternalMedia
-- STT: Whisper large-v3-turbo (файнтюн kz/ru, 8кГц) + faster-whisper, RTX 3050 4GB
+- STT: Kazakh Whisper large-v3-turbo (файнтюн shyngys879, kz+ru) + faster-whisper, RTX 3050 4GB
 - TTS: Piper (CPU, self-hosted), отдельные голоса ru/kk
 - RAG: Qdrant (self-hosted) + BGE-M3 или Qwen3-Embedding-8B + Qwen3-Reranker
 - LLM: внешний API (Qwen-семейство), свой лёгкий gateway в духе LiteLLM, prompt caching

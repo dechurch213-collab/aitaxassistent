@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Загрузка моделей. Запускать на сервере (Debian 12).
+# Зависимости: python3, huggingface_hub, ctranslate2 (для конвертации Whisper).
+# Установка зависимостей:
+#   pip3 install huggingface_hub ctranslate2 transformers[torch] torch
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# Конвертер Whisper: hf safetensors -> CTranslate2 (format faster-whisper)
+command -v ct2-transformers-converter >/dev/null 2>&1 || {
+  echo "ERROR: ct2-transformers-converter не найден."
+  echo "Установите: pip3 install ctranslate2 transformers[torch] torch"
+  exit 1
+}
 
 mkdir -p models/whisper models/bge-m3 models/reranker models/piper
 
@@ -47,14 +57,16 @@ wget -q -O models/piper/kk_KZ-almaty-medium.onnx \
 wget -q -O models/piper/kk_KZ-almaty-medium.onnx.json \
   https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/kk/kk_KZ/almaty/medium/kk_KZ-almaty-medium.onnx.json || true
 
-echo "=== Whisper large-v3-turbo (базовая, ~1.6GB) ==="
-echo "ВНИМАНИЕ: для продакшена замените на ВАШ файнтюн (FT kz/ru 8kHz)."
-if [ ! -d models/whisper/whisper-large-v3-turbo-FT-kzru ]; then
-  python3 -c "
-from huggingface_hub import snapshot_download
-snapshot_download('Systran/faster-whisper-large-v3-turbo',
-                  local_dir='models/whisper/whisper-large-v3-turbo-FT-kzru')
-"
+echo "=== Kazakh Whisper large-v3-turbo (файнтюн shyngys879, ~1.6GB) ==="
+echo "Скачивание safetensors -> конвертация в формат CTranslate2 (int8_float16)."
+echo "Модель оптимизирована под казахский; русский работает через base-архитектуру."
+# faster-whisper требует веса в формате CTranslate2 (model.bin), а в HF лежит
+# Transformers/Safetensors. ct2-transformers-converter тянет репо и конвертирует.
+if [ ! -f models/whisper/whisper-large-v3-turbo-FT-kzru/model.bin ]; then
+  ct2-transformers-converter \
+    --model shyngys879/kazakh-whisper-large-v3-turbo \
+    --output_dir models/whisper/whisper-large-v3-turbo-FT-kzru \
+    --quantization int8_float16
 fi
 
 echo "Done."
