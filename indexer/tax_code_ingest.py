@@ -10,6 +10,7 @@
   --dim         размерность вектора (1024 для BGE-M3, 4096 для Qwen3-Emb-8B)
 """
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -96,12 +97,20 @@ def main():
 
     # 3. articles_meta в Postgres (для валидации цитат)
     if args.db_url:
-        import asyncpg
+        asyncio.run(_upsert_articles_meta(args.db_url, articles, args.lang))
+        print(f"articles_meta upserted: {len(articles)}")
+    else:
+        print("WARN: no --db-url, articles_meta skipped")
 
-        conn = asyncpg.connect(args.db_url)
+
+async def _upsert_articles_meta(db_url, articles, lang):
+    import asyncpg
+
+    conn = await asyncpg.connect(db_url)
+    try:
         for a in articles:
-            cross = build_chunks([a], args.lang)[0]["cross_references"]
-            conn.execute(
+            cross = build_chunks([a], lang)[0]["cross_references"]
+            await conn.execute(
                 """INSERT INTO articles_meta
                    (article_number, chapter_number, chapter_title, title, effective_date, cross_refs, lang)
                    VALUES ($1,$2,$3,$4,'2026-01-01',$5,$6)
@@ -115,12 +124,10 @@ def main():
                 a.chapter[1] if a.chapter else None,
                 a.title,
                 cross,
-                args.lang,
+                lang,
             )
-        conn.close()
-        print(f"articles_meta upserted: {len(articles)}")
-    else:
-        print("WARN: no --db-url, articles_meta skipped")
+    finally:
+        await conn.close()
 
 
 if __name__ == "__main__":
