@@ -1,0 +1,39 @@
+# Media Gateway: ARI/ExternalMedia, VAD, endpointing, barge-in
+
+ari:
+  url: http://127.0.0.1:8088
+  app_name: ai_assistant
+  user: ${ARI_USER}
+  password: ${ARI_PASSWORD}
+  external_media_codec: linear8    # L16 8kHz mono, 20ms кадры
+
+stt:
+  url: http://stt:8091
+
+tts:
+  url: http://tts:8095
+
+orchestrator:
+  ws_url: ws://orchestrator:8090/ws/media
+
+models:
+  silero_vad: /models/silero_vad.onnx
+
+endpointing:
+  vad: silero_vad
+  speech_pad_ms: 100               # паддинги до/после речи
+  min_speech_ms: 300
+  silence_after_speech_ms: 550     # конец реплики
+  max_utterance_seconds: 30
+
+barge_in:
+  enabled: true
+  min_interrupt_ms: 400            # мин. длительность речи для прерывания TTS
+
+resampling:
+  stt_input: 16000                 # 8k → 16k для Whisper
+  tts_output: 8000                 # 24k (Piper) → 8k → ExternalMedia
+
+health:
+  heartbeat_interval_ms: 1000
+  ws_timeout_ms: 5000              # без heartbeats → Asterisk failover
