@@ -58,7 +58,7 @@ NVIDIA-драйвер (без него STT не будет работать но
 
     ssh root@ваш-сервер
     cd ~
-    git clone ваш-ссылка-на-репозиторий caller
+    git clone https://github.com/dechurch213-collab/aitaxassistent
 
 Проверьте, что файлы на месте:
 
