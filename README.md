@@ -6,7 +6,7 @@
 
 Документация: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-📖 **Не разбираетесь в Docker/Asterisk? Читайте [SETUP_GUIDE.md](SETUP_GUIDE.md) —
+**Читайте [SETUP_GUIDE.md](SETUP_GUIDE.md) —
 пошаговая инструкция с примерами команд от и до.**
 
 ## Состав
