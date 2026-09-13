@@ -46,13 +46,13 @@ NVIDIA-драйвер (без него STT не будет работать но
 
 ## ШАГ 1: Скачать код проекта на сервер
 
-У вас есть этот проект (папка "caller") где-то локально. Нужно передать его на сервер.
+У вас есть этот проект (папка "aitaxassistent") где-то локально. Нужно передать его на сервер.
 
 Вариант А — если проект уже на сервере, пропустите этот шаг.
 
 Вариант Б — с локальной машины на Windows:
 
-    scp -r E:\AI\caller root@ваш-сервер:~/caller
+    scp -r E:\AI\aitaxassistent root@ваш-сервер:~/aitaxassistent
 
 Вариант В — через Git (если проект в репозитории):
 
@@ -62,7 +62,7 @@ NVIDIA-драйвер (без него STT не будет работать но
 
 Проверьте, что файлы на месте:
 
-    cd ~/caller
+    cd ~/aitaxassistent
     ls -la
 
 Должны быть папки: services, config, shared, indexer, scripts, audit, tests, docs.
@@ -73,7 +73,7 @@ NVIDIA-драйвер (без него STT не будет работать но
 
 Создадим файл с паролями. Не показывайте этот файл никому.
 
-    cd ~/caller
+    cd ~/aitaxassistent
     cp .env.example .env
 
 Откройте его для редактирования:
@@ -100,7 +100,7 @@ NVIDIA-драйвер (без него STT не будет работать но
 
 Выполните:
 
-    cd ~/caller
+    cd ~/aitaxassistent
     chmod +x scripts/fetch_models.sh
     bash scripts/fetch_models.sh
 
@@ -115,7 +115,7 @@ NVIDIA-драйвер (без него STT не будет работать но
 файнтюн-версию (под казахский/русский, 8 кГц).
 
 Где лежит базовая версия:
-    ~/caller/models/whisper/whisper-large-v3-turbo-FT-kzru/
+    ~/aitaxassistent/models/whisper/whisper-large-v3-turbo-FT-kzru/
 
 Как заменить:
 1. Возьмите ваш файнтюн-файл Whisper (у вас он уже есть, раз вы его тренировали)
@@ -156,14 +156,14 @@ NVIDIA-драйвер (без него STT не будет работать но
 1. Взять текст НК РК 2026 (на казахском и русском)
 2. Оформить его в этом формате
 3. Сохранить как два файла:
-   - ~/caller/data/nk_2026_kz.txt (казахский)
-   - ~/caller/data/nk_2026_ru.txt (русский)
+   - ~/aitaxassistent/data/nk_2026_kz.txt (казахский)
+   - ~/aitaxassistent/data/nk_2026_ru.txt (русский)
 
 Если текст уже в другом формате — напишите, помогу его преобразовать.
 
 Создайте папку:
 
-    mkdir -p ~/caller/data
+    mkdir -p ~/aitaxassistent/data
 
 ---
 
@@ -195,7 +195,7 @@ NVIDIA-драйвер (без него STT не будет работать но
 
 У нас есть готовый файл сценария. Скопируем его:
 
-    cd ~/caller
+    cd ~/aitaxassistent
     cp telephony/asterisk_dialplan.conf /etc/asterisk/ai_assistant.conf
 
 Откроем и проверим:
@@ -275,7 +275,7 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
 
 Теперь самое интересное — запуск!
 
-    cd ~/caller
+    cd ~/aitaxassistent
     docker compose up -d --build
 
 Это займёт 5-10 минут (docker соберёт контейнеры).
@@ -283,8 +283,8 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
 Если всё прошло успешно, увидите что-то вроде:
 
     [+] Running 9/9
-     ✔ Container caller-media-gateway-1  Started
-     ✔ Container caller-stt-1           Started
+     ✔ Container aitaxassistent-media-gateway-1  Started
+     ✔ Container aitaxassistent-stt-1           Started
      ...
 
 Если видите ошибки — прокрутите вверх, посмотрите, где проблема.
@@ -346,14 +346,14 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
 
     apt install -y python3-pip
 
-    cd ~/caller
+    cd ~/aitaxassistent
 
     # Для казахского языка
     python3 indexer/tax_code_ingest.py \
       --input data/nk_2026_kz.txt \
       --lang kk \
       --rag-url http://localhost:8093 \
-      --db-url postgresql://caller:ВАШ_ПАРОЛЬ_АУДИТ@localhost:5432/audit \
+      --db-url postgresql://aitaxassistent:ВАШ_ПАРОЛЬ_АУДИТ@localhost:5432/audit \
       --dim 1024
 
     # Для русского языка
@@ -361,7 +361,7 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
       --input data/nk_2026_ru.txt \
       --lang ru \
       --rag-url http://localhost:8093 \
-      --db-url postgresql://caller:ВАШ_ПАРОЛЬ_АУДИТ@localhost:5432/audit \
+      --db-url postgresql://aitaxassistent:ВАШ_ПАРОЛЬ_АУДИТ@localhost:5432/audit \
       --dim 1024
 
 Вместо ВАШ_ПАРОЛЬ_АУДИТ вставьте пароль из .env (строка AUDIT_DB_PASSWORD).
@@ -372,7 +372,7 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
 
 Проверьте:
 
-    docker compose exec audit-db psql -U caller -d audit -c "SELECT count(*) FROM articles_meta;"
+    docker compose exec audit-db psql -U aitaxassistent -d audit -c "SELECT count(*) FROM articles_meta;"
 
 Должно быть 100+ статей.
 
@@ -434,7 +434,7 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
 ### RAG не находит статьи
 
 Проверьте, что НК загружен:
-    docker compose exec audit-db psql -U caller -d audit -c "SELECT count(*) FROM articles_meta;"
+    docker compose exec audit-db psql -U aitaxassistent -d audit -c "SELECT count(*) FROM articles_meta;"
 
 Если 0 - перезапустите ШАГ 8.
 
