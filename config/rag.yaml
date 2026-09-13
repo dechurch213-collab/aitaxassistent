@@ -31,4 +31,4 @@ indexing:
   long_article_split_threshold: 3000  # слов; длинные статьи → под-чанки section
   keep_hierarchy: true             # главы/разделы в payload
   keep_cross_references: true      # cross-refs статей в payload
-  languages: [kz, ru]
+  languages: [kk, ru]

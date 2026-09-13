@@ -1,7 +1,7 @@
 # Media Gateway: ARI/ExternalMedia, VAD, endpointing, barge-in
 
 ari:
-  url: http://127.0.0.1:8088
+  url: http://host.docker.internal:8088   # Asterisk на хосте; из контейнера — через host-gateway
   app_name: ai_assistant
   user: ${ARI_USER}
   password: ${ARI_PASSWORD}

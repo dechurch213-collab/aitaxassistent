@@ -6,7 +6,7 @@
 
 Документация: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-**Не разбираетесь в Docker/Asterisk? Читайте [SETUP_GUIDE.md](SETUP_GUIDE.md) —
+📖 **Не разбираетесь в Docker/Asterisk? Читайте [SETUP_GUIDE.md](SETUP_GUIDE.md) —
 пошаговая инструкция с примерами команд от и до.**
 
 ## Состав
@@ -38,9 +38,9 @@ bash scripts/fetch_models.sh
 # 3. Тексты НК РК 2026 (формат: РАЗДЕЛ/ГЛАВА/СТАТЬЯ — см. indexer/chunker.py)
 #    и индексация:
 python indexer/tax_code_ingest.py --input /data/nk_2026_kz.txt --lang kk \
-  --rag-url http://localhost:8093 --db-url postgresql://caller:.../audit --dim 1024
+  --rag-url http://localhost:8093 --db-url postgresql://aitaxassistent:.../audit --dim 1024
 python indexer/tax_code_ingest.py --input /data/nk_2026_ru.txt --lang ru \
-  --rag-url http://localhost:8093 --db-url postgresql://caller:.../audit --dim 1024
+  --rag-url http://localhost:8093 --db-url postgresql://aitaxassistent:.../audit --dim 1024
 
 # 4. Asterisk: применить dialplan из telephony/asterisk_dialplan.conf,
 #    создать ARI-приложение ai_assistant (user/pass -> .env)

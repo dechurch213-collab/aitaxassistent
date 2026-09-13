@@ -97,37 +97,36 @@ def main():
 
     # 3. articles_meta в Postgres (для валидации цитат)
     if args.db_url:
-        asyncio.run(_upsert_articles_meta(args.db_url, articles, args.lang))
+        import asyncpg
+
+        async def _write_meta():
+            conn = await asyncpg.connect(args.db_url)
+            try:
+                for a in articles:
+                    cross = build_chunks([a], args.lang)[0]["cross_references"]
+                    await conn.execute(
+                        """INSERT INTO articles_meta
+                           (article_number, chapter_number, chapter_title, title, effective_date, cross_refs, lang)
+                           VALUES ($1,$2,$3,$4,'2026-01-01',$5,$6)
+                           ON CONFLICT (article_number) DO UPDATE SET
+                             chapter_number=EXCLUDED.chapter_number,
+                             chapter_title=EXCLUDED.chapter_title,
+                             title=EXCLUDED.title,
+                             cross_refs=EXCLUDED.cross_refs""",
+                        a.number,
+                        a.chapter[0] if a.chapter else "",
+                        a.chapter[1] if a.chapter else None,
+                        a.title,
+                        cross,
+                        args.lang,
+                    )
+            finally:
+                await conn.close()
+
+        asyncio.run(_write_meta())
         print(f"articles_meta upserted: {len(articles)}")
     else:
         print("WARN: no --db-url, articles_meta skipped")
-
-
-async def _upsert_articles_meta(db_url, articles, lang):
-    import asyncpg
-
-    conn = await asyncpg.connect(db_url)
-    try:
-        for a in articles:
-            cross = build_chunks([a], lang)[0]["cross_references"]
-            await conn.execute(
-                """INSERT INTO articles_meta
-                   (article_number, chapter_number, chapter_title, title, effective_date, cross_refs, lang)
-                   VALUES ($1,$2,$3,$4,'2026-01-01',$5,$6)
-                   ON CONFLICT (article_number) DO UPDATE SET
-                     chapter_number=EXCLUDED.chapter_number,
-                     chapter_title=EXCLUDED.chapter_title,
-                     title=EXCLUDED.title,
-                     cross_refs=EXCLUDED.cross_refs""",
-                a.number,
-                a.chapter[0] if a.chapter else "",
-                a.chapter[1] if a.chapter else None,
-                a.title,
-                cross,
-                lang,
-            )
-    finally:
-        await conn.close()
 
 
 if __name__ == "__main__":

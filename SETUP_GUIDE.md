@@ -1,147 +1,169 @@
 # ПОШАГОВАЯ ИНСТРУКЦИЯ ПО ЗАПУСКУ
 
-Этот документ объясняет, как запустить голосового AI-ассистента с нуля.
-Читайте по порядку, выполняйте команды точно так, как написано.
-Команды для копирования выделены в отдельный блок.
+Этот документ объясняет, как запустить голосового AI-ассистента консультаций
+по Налоговому кодексу РК (2026) с нуля. Читайте по порядку, команды для
+копирования выделены в отдельные блоки и выполняются точно как написано.
 
 Понадобится:
-- SSH-доступ к вашему Debian 12 серверу (где стоит Asterisk/FreePBX)
-- NVIDIA GPU (RTX 3050) с драйвером
-- ~5-10 ГБ свободного места на диске
-- Около 2-3 часов времени (большая часть — на загрузку моделей)
+- SSH-доступ к серверу Debian 12 (где уже стоит Asterisk/FreePBX)
+- NVIDIA GPU (RTX 3050 4 ГБ) с драйвером
+- ~25 ГБ свободного места (модели ~15 ГБ + Docker-образы + данные)
+- ~24 ГБ RAM
+- Около 2–3 часов (большая часть — загрузка моделей)
 
-Если что-то не понятно — спрашивайте, не гадвайте.
+Если что-то не понятно — спрашивайте, не гадайте.
+
+---
+
+## Что именно запускается
+
+9 контейнеров (сеть `aitaxassistent_net`):
+
+| Сервис | Порт | Роль |
+|---|---|---|
+| media-gateway | 8081 | ARI/ExternalMedia, VAD, endpointing, barge-in |
+| stt | 8091 | faster-whisper large-v3-turbo (GPU) |
+| orchestrator | 8090 | state-машина звонка, эскалации, контекст-окно |
+| rag-service | 8093 | embedding (BGE-M3) + reranker (Qwen3) + Qdrant |
+| qdrant | 6333 | векторная БД статей НК РК |
+| llm-gateway | 8094 | OpenAI-compatible прокси, failover по провайдерам |
+| tts | 8095 | Piper (ru/kk) |
+| audit-db | 5432 | Postgres: звонки, туры, метрики |
+| audit-worker | 8096 | асинхронная запись аудита |
+
+Asterisk/FreePBX остаётся вне Docker (systemd, уже развёрнут). Конфиги сервисов
+лежат в `config/` и монтируются в контейнеры как `/etc/aitaxassistent/*.yaml`.
 
 ---
 
 ## ШАГ 0: Проверка готовности сервера
 
-Откройте терминал и подключитесь к серверу по SSH:
+Подключитесь по SSH:
 
     ssh root@ваш-сервер
 
-Введите пароль. Теперь вы на сервере.
-
-Проверьте, что всё на месте. Выполните эти команды:
+Проверьте железо и софт:
 
     nvidia-smi
-
-Если видите карту RTX 3050 и драйвер — отлично. Если ошибка — сначала поставьте
-NVIDIA-драйвер (без него STT не будет работать нормально).
+    # должна видна карта RTX 3050 и драйвер. Если ошибка — поставьте драйвер
+    # (см. «Приложения» в конце).
 
     free -h
-
-Посмотрите, что есть 24 ГБ RAM.
+    # должно быть ~24 ГБ RAM
 
     docker --version
     docker compose version
+    # если нет — см. «Приложения».
 
-Если docker не установлен — см. "Приложения" в конце этого файла.
-
-    asterisk -rx "core show settings" | grep "Asterisk"
-
-Убедитесь, что Asterisk работает.
+    asterisk -rx "core show settings" | grep Asterisk
+    # Asterisk должен работать.
 
 ---
 
 ## ШАГ 1: Скачать код проекта на сервер
 
-У вас есть этот проект (папка "aitaxassistent") где-то локально. Нужно передать его на сервер.
+Проект (папка `aitaxassistent`) нужно передать на сервер.
 
-Вариант А — если проект уже на сервере, пропустите этот шаг.
+Вариант А — проект уже на сервере: пропустите шаг.
 
-Вариант Б — с локальной машины на Windows:
+Вариант Б — с локальной машины Windows:
 
     scp -r E:\AI\aitaxassistent root@ваш-сервер:~/aitaxassistent
 
-Вариант В — через Git (если проект в репозитории):
+Вариант В — через Git:
 
     ssh root@ваш-сервер
     cd ~
-    git clone https://github.com/dechurch213-collab/aitaxassistent
+    git clone ваша-ссылка-на-репозиторий aitaxassistent
 
 Проверьте, что файлы на месте:
 
     cd ~/aitaxassistent
     ls -la
 
-Должны быть папки: services, config, shared, indexer, scripts, audit, tests, docs.
+Должны быть папки: `services`, `config`, `shared`, `indexer`, `scripts`, `audit`,
+`tests`, `docs`, `telephony` и файлы `docker-compose.yml`, `.env.example`.
 
 ---
 
-## ШАГ 2: Настроить секреты (ключи и пароли)
-
-Создадим файл с паролями. Не показывайте этот файл никому.
+## ШАГ 2: Секреты (ключи и пароли)
 
     cd ~/aitaxassistent
     cp .env.example .env
-
-Откройте его для редактирования:
-
     nano .env
 
-Вы увидите пустые поля. Заполните их:
+Заполните все поля:
 
-- LLM_API_KEY_PRIMARY=ваш ключ от провайдера LLM (например, Qwen/DashScope)
-  Где взять: у вашего поставщика LLM-сервиса. Это ключ для доступа к модели.
-- LLM_API_KEY_SECONDARY=второй ключ (резервный, если первый сломается)
-- QDRANT_API_KEY=придумайте любой сложный пароль (это для внутренней БД)
-- ARI_USER=ai_assistant_user
-- ARI_PASSWORD=очень-сложный-пароль-123 (придумайте, запомните)
-- AUDIT_DB_PASSWORD=ещё-один-сложный-пароль (для базы аудита)
+- `LLM_API_KEY_PRIMARY=` ключ от провайдера LLM (DashScope/Qwen). Основной.
+- `LLM_API_KEY_SECONDARY=` резервный ключ (другой base_url, см. `config/llm-gateway.yaml`).
+- `QDRANT_API_KEY=` любой сложный пароль для внутренней векторной БД Qdrant.
+- `ARI_USER=` `ai_assistant_user` (придумайте; создадим его в Asterisk на ШАГЕ 5).
+- `ARI_PASSWORD=` сложный пароль для ARI (запомните, он же пойдёт в `ari.conf`).
+- `AUDIT_DB_PASSWORD=` пароль пользователя БД аудита (пользователь `aitaxassistent`).
+- `RAG_RERANKER_PROFILE=` `gpu-4b` (по умолчанию; см. `config/rag.yaml`).
 
-Сохранить в nano: Ctrl+O, Enter, затем Ctrl+X.
+Сохранить: `Ctrl+O`, `Enter`, `Ctrl+X`.
+
+> Файл `.env` не показывайте никому и не коммитьте. Ключи LLM уходят только в
+> `llm-gateway`, наружу не пробрасываются.
 
 ---
 
 ## ШАГ 3: Скачать модели (AI-мозги)
 
-Это самый долгий шаг (20-40 минут в зависимости от интернета).
+Самый долгий шаг (20–40 минут). Сначала поставим загрузчик моделей:
 
-Выполните:
+    pip3 install huggingface_hub
+    # если pip3 нет: apt install -y python3-pip
+
+Запускаем загрузку:
 
     cd ~/aitaxassistent
     chmod +x scripts/fetch_models.sh
     bash scripts/fetch_models.sh
 
 Скрипт скачает:
-- Silero VAD (распознаёт, где речь, где тишина)
-- BGE-M3 (понимает смысл вопросов)
-- Qwen3-Reranker (ранжирует статьи)
-- Piper голоса (русский, казахский)
-- Whisper (распознаёт речь — базовую версию)
+- `models/silero_vad.onnx` — Silero VAD (детектор речи)
+- `models/bge-m3/` — BGE-M3 (embedding, ~2.3 ГБ)
+- `models/reranker/` — Qwen3-Reranker-4B (~9 ГБ)
+- `models/piper/` — голоса Piper: `ru_RU-aidar-medium`, `ru_RU-dmitri-medium`,
+  `kk_KZ-astana-medium`, `kk_KZ-almaty-medium`
+- `models/whisper/whisper-large-v3-turbo-FT-kzru/` — Whisper large-v3-turbo
+  (базовая версия, ~1.6 ГБ)
 
-ВАЖНО: скрипт скачает БАЗОВУЮ версию Whisper. Вам нужно заменить её на ВАШУ
-файнтюн-версию (под казахский/русский, 8 кГц).
+ВАЖНО: скрипт качает **базовый** Whisper. Для продакшена замените его на ВАШ
+файнтюн (kz/ru, телефонное качество 8 кГц). Положите ваш чекпоинт в ту же папку:
 
-Где лежит базовая версия:
     ~/aitaxassistent/models/whisper/whisper-large-v3-turbo-FT-kzru/
 
-Как заменить:
-1. Возьмите ваш файнтюн-файл Whisper (у вас он уже есть, раз вы его тренировали)
-2. Загрузите его на сервер в эту папку
-3. Структура папки должна быть такой:
-   whisper-large-v3-turbo-FT-kzru/
-   ├── model.bin (или config.json, tokenizer.json и т.д.)
-   └── (все файлы от вашего файнтюна)
+Структура (пример):
+```
+whisper-large-v3-turbo-FT-kzru/
+├── config.json
+├── tokenizer.json
+├── model.bin (или эквивалент от вашего файнтюна)
+└── ...остальные файлы чекпоинта
+```
 
-Если у вас нет файнтюна — система будет работать, но хуже понимать
-непроясную речь (особенно казахский и пожилых пользователей).
+Если файнтюна нет — система будет работать, но хуже понимать казахский и
+невнятную речь (особенно пожилых абонентов).
 
-Проверьте, что модели скачались:
+Проверьте, что всё скачалось:
 
     ls -la models/
-    ls -la models/whisper/
+    ls -la models/whisper/whisper-large-v3-turbo-FT-kzru/
 
-Должны быть папки с файлами, не пустые.
+Папки должны быть непустыми.
+
+> Если `kk_KZ-astana-medium.onnx` не скачался (нет в публичном репо) — подложите
+> свой казахский голос Piper в `models/piper/` и пропишите его в `config/tts.yaml`.
+> Без казахского голоса TTS будет отдавать 503 на языке `kk`.
 
 ---
 
-## ШАГ 4: Подготовить текст Налогового кодекса
+## ШАГ 4: Подготовить текст Налогового кодекса РК 2026
 
-Системе нужен текст НК РК 2026 в специальном формате.
-
-Формат (пример):
+Системе нужен текст НК в специальном формате. Пример (русский):
 
     РАЗДЕЛ 17. НАЛОГИ И СБОРЫ
     ГЛАВА 43. НАЛОГ НА ДОХОДЫ ФИЗИЧЕСКИХ ЛИЦ
@@ -149,17 +171,16 @@ NVIDIA-драйвер (без него STT не будет работать но
     1. Текст первого пункта...
     2. Текст второго пункта...
 
-СТАТЬЯ 43-1. ДРУГАЯ СТАТЬЯ
+    СТАТЬЯ 43-1. ДРУГАЯ СТАТЬЯ
     1. Текст...
 
-Вам нужно:
-1. Взять текст НК РК 2026 (на казахском и русском)
-2. Оформить его в этом формате
-3. Сохранить как два файла:
-   - ~/aitaxassistent/data/nk_2026_kz.txt (казахский)
-   - ~/aitaxassistent/data/nk_2026_ru.txt (русский)
+Для казахского заголовки: `BÖLIM` (раздел), `ТАРАУ` (глава), `БАП` (статья).
+Формат разбора см. в `indexer/chunker.py`.
 
-Если текст уже в другом формате — напишите, помогу его преобразовать.
+Сохраните два файла:
+
+    ~/aitaxassistent/data/nk_2026_kz.txt   (казахский)
+    ~/aitaxassistent/data/nk_2026_ru.txt   (русский)
 
 Создайте папку:
 
@@ -169,186 +190,179 @@ NVIDIA-драйвер (без него STT не будет работать но
 
 ## ШАГ 5: Настроить Asterisk
 
-Аsterisk должен знать, что при звонке на определённый номер нужно передать
-его нашему AI. Всё делается через терминал — готовый конфиг уже есть.
+Asterisk должен: при звонке на нужный номер передавать его в AI, а при обрыве/
+эскалации — переводить на операторов. Готовый dialplan уже в
+`telephony/asterisk_dialplan.conf`.
 
-### 5.1. Добавить пользователя ARI
+### 5.1. Включить ARI и создать пользователя
 
-Это "пароль", по которому наш AI подключается к Asterisk.
+    nano /etc/asterisk/http.conf
+
+Убедитесь, что HTTP-сервер Asterisk слушает адрес, доступный из Docker (не только
+127.0.0.1). Минимум:
+
+    [general]
+    enabled=yes
+    bindaddr=0.0.0.0
+    bindport=8088
+
+Перезагрузите: `asterisk -rx "http reload"`.
 
     nano /etc/asterisk/ari.conf
 
-Добавьте в конец файла:
+Добавьте в конец (пароль = `ARI_PASSWORD` из `.env`):
 
     [ai_assistant_user]
     type = user
-    password = ПАРОЛЬ_ИЗ_ENV
+    password = ВАШ_ПАРОЛЬ_ИЗ_ENV
+    read_only = no
 
-Вместо ПАРОЛЬ_ИЗ_ENV вставьте тот пароль, который вы задали в .env
-в строке ARI_PASSWORD (ШАГ 2). Должны совпадать!
+    ; приложение, которое «забирает» звонок:
+    [general]
+    enabled = yes
+    pretty = no
+    allowed_origins = *
 
-Сохранить: Ctrl+O, Enter, Ctrl+X.
+Сохранить: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
     asterisk -rx "ari reload"
+    asterisk -rx "ari show users"
+    # должен быть ai_assistant_user.
 
-### 5.2. Добавить сценарий звонка (dialplan)
-
-У нас есть готовый файл сценария. Скопируем его:
+### 5.2. Подключить dialplan
 
     cd ~/aitaxassistent
     cp telephony/asterisk_dialplan.conf /etc/asterisk/ai_assistant.conf
-
-Откроем и проверим:
-
     nano /etc/asterisk/ai_assistant.conf
 
-Убедитесь, что в секции [from-ai-escalation] указаны ваши реальные операторы.
-Найдите строку:
+В секции `[from-ai-escalation]` замените `AGENT1|AGENT2` на ваши реальные SIP-агенты:
 
-    same => n,Dial(SIP/AGENT1|SIP/AGENT2,60)
+    same => n,Dial(SIP/101|SIP/102|SIP/103,60)
 
-И замените AGENT1|AGENT2 на ваши реальные SIP-агентов (через |, например:
-SIP/101|SIP/102|SIP/103). Если операторов пока нет — оставьте как есть,
-эскалация будет недоступна, но AI работать будет.
+Если операторов нет — оставьте как есть (эскалация будет недоступна, но AI
+ответы отдаёт). Номер абонента (`?caller=${CALLERID(num)}`) передаётся в
+media-gateway и маскируется в аудите; `CALLERID` НЕ перезаписывается, чтобы
+оператор видел реальный номер.
 
-Сохранить: Ctrl+O, Enter, Ctrl+X.
-
-Теперь подключим этот файл к Asterisk:
+Подключите файл к extensions:
 
     nano /etc/asterisk/extensions.conf
 
-Найдите строку:
-
-    #include custom.conf
-
-И добавьте под ней (или в секцию [general], если она есть):
+Найдите `#include custom.conf` и добавьте под ней:
 
     #include ai_assistant.conf
 
-Сохранить: Ctrl+O, Enter, Ctrl+X.
-
-Перезагрузите Asterisk:
-
     asterisk -rx "dialplan reload"
+    asterisk -rx "dialplan show ai-assistant"
+    # должна появиться схема с ai-assist.
 
-### 5.3. Привязать телефонный номер
+### 5.3. Привязать входящий номер к AI
 
-Теперь нужно сказать Asterisk: "если звонят на номер X — запускай AI".
+Вариант 1 (FreePBX, проще): Inbound Routes → Add →
+- Description: AI Tax Assistant
+- DID Number: ваш-номер-для-консультаций
+- Destination: Extension/Feature → `ai-assist`
 
-Вариант 1 (через FreePBX, проще):
-1. Откройте браузер, войдите в FreePBX (адрес вашего сервера)
-2. Inbound Routes -> Add Inbound Route
-3. Заполните:
-   - Description: AI Tax Assistant
-   - DID Number: ваш-номер-для-консультаций
-   - Set Destination to: Extension or Feature
-   - Extension: ai-assist
-4. Submit Changes
-
-Вариант 2 (через терминал, если FreePBX не используете):
+Вариант 2 (терминал):
 
     nano /etc/asterisk/extensions.conf
 
-Добавьте новый контекст:
+Добавьте контекст:
 
     [from-pstn-ai]
     exten => ВАШ-НОМЕР,1,Goto(ai-assistant,ai-assist,1)
     exten => i,1,Goto(ai-assistant,ai-assist,1)
 
-Где ВАШ-НОМЕР — номер, на который будут звонить (например, 8800 или 2590).
-
     asterisk -rx "dialplan reload"
 
-### 5.4. Проверить, что Asterisk видит всё
-
-    asterisk -rx "dialplan show ai-assistant"
-
-Должна появиться схема с ai-assist. Если пусто — проверьте ШАГ 5.2.
-
-    asterisk -rx "ari show users"
-
-Должен быть пользователь ai_assistant_user.
+> Asterisk на хосте стучится на ExternalMedia по `ws://127.0.0.1:8081` — этот
+> порт проброшен контейнером `media-gateway` только на localhost (см.
+> `docker-compose.yml`). ARI ходит в обратную сторону: контейнер → хост через
+> `host.docker.internal` (настроено в compose через `extra_hosts`).
 
 ---
 
 ## ШАГ 6: Запустить все сервисы
 
-Теперь самое интересное — запуск!
-
     cd ~/aitaxassistent
     docker compose up -d --build
 
-Это займёт 5-10 минут (docker соберёт контейнеры).
-
-Если всё прошло успешно, увидите что-то вроде:
+Сборка идёт 5–10 минут. Успешный запуск выглядит примерно так:
 
     [+] Running 9/9
      ✔ Container aitaxassistent-media-gateway-1  Started
      ✔ Container aitaxassistent-stt-1           Started
-     ...
+     ✔ Container aitaxassistent-rag-service-1    Started
+     ✔ Container aitaxassistent-qdrant-1         Started
+     ✔ Container aitaxassistent-llm-gateway-1    Started
+     ✔ Container aitaxassistent-tts-1           Started
+     ✔ Container aitaxassistent-audit-db-1       Started
+     ✔ Container aitaxassistent-audit-worker-1   Started
+     ✔ Container aitaxassistent-orchestrator-1   Started
 
-Если видите ошибки — прокрутите вверх, посмотрите, где проблема.
-Самые частые:
-- "port already in use" — освободите порт
-- "no space left on device" — мало места на диске
-- "cannot allocate memory" — мало RAM
+Частые ошибки:
+- `port already in use` — освободите порт (особенно 5432/8081 на хосте).
+- `no space left on device` — мало места.
+- `cannot allocate memory` — мало RAM.
 
-Проверьте, что все сервисы запущены:
+Проверьте статус:
 
     docker compose ps
 
-Все должны быть в статусе "running" или "Up".
+Все сервисы должны быть `Up`. Колонка `health` со временем станет `healthy`
+(stt и rag стартуют дольше — до минуты).
 
 ---
 
 ## ШАГ 7: Проверить, что всё работает
 
-Проверим каждый сервис. Выполните эти команды:
+Сначала тесты контрактов (без Docker, на хосте):
 
-    # Media gateway
-    curl http://localhost:8081/health
-    # Должно быть: {"status":"ok",...}
+    cd ~/aitaxassistent
+    python3 tests/test_contracts.py
+    # ожидаем: ALL TESTS PASSED
 
-    # STT
-    curl http://localhost:8091/health
-    # Должно быть: {"status":"ok","model_loaded":true}
-    # Если model_loaded: false — модель не загрузилась, см. troubleshooting
+Затем health-чеки. Порты 8081, 6333, 8093, 5432 проброшены на localhost —
+можно дёрнуть напрямую с хоста:
 
-    # Orchestrator
-    curl http://localhost:8090/health
-    # Должно быть: {"status":"ok",...}
+    curl -s http://localhost:8081/health     # media-gateway
+    curl -s http://localhost:6333/healthz   # qdrant
+    curl -s http://localhost:8093/health    # rag-service
 
-    # RAG
-    curl http://localhost:8093/health
-    # Должно быть: {"status":"ok",...}
+Внутренние сервисы (8090/8091/8094/8095) не проброшены наружу — проверяем
+изнутри контейнеров (curl в них уже установлен):
 
-    # LLM Gateway
-    curl http://localhost:8094/health
-    # Должно быть: {"status":"ok","providers":[...]}
+    docker compose exec orchestrator curl -s localhost:8090/health
+    docker compose exec stt          curl -s localhost:8091/health   # "model_loaded": true
+    docker compose exec llm-gateway  curl -s localhost:8094/health  # список провайдеров
+    docker compose exec tts          curl -s localhost:8095/health   # voices_available
 
-    # TTS
-    curl http://localhost:8095/health
-    # Должно быть: {"status":"ok","voices_available":[...]}
+Если все вернули `{"status":"ok",...}` — сервисы работают.
 
-Если все проверки прошли — поздравляю, сервисы работают!
+> `stt` /health показывает `model_loaded: true` только после загрузки Whisper
+> (несколько секунд после старта). Если `false` — см. troubleshooting.
 
 ---
 
-## ШАГ 8: Наполнить базу статей НК
+## ШАГ 8: Наполнить базу статей НК (индексация)
 
-Теперь нужно, чтобы система "прочитала" Налоговый кодекс.
+Система должна «прочитать» Налоговый кодекс: векторизовать статьи в Qdrant и
+записать метаданные в Postgres для валидации цитат.
 
-Сначала установим нужные библиотеки (один раз):
+Поставим зависимости индексатора (один раз):
 
     pip3 install httpx qdrant-client asyncpg
 
-Если pip3 нет:
-
-    apt install -y python3-pip
+Перед запуском загрузим секрет Qdrant из `.env` в окружение (индексатор читает
+`QDRANT_API_KEY` и `QDRANT_URL` из среды):
 
     cd ~/aitaxassistent
+    set -a; . ./.env; set +a
 
-    # Для казахского языка
+Запускаем индексацию (rag-service и qdrant должны быть `healthy` — см. ШАГ 7).
+
+Казахский корпус (`--lang kk`):
+
     python3 indexer/tax_code_ingest.py \
       --input data/nk_2026_kz.txt \
       --lang kk \
@@ -356,7 +370,8 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
       --db-url postgresql://aitaxassistent:ВАШ_ПАРОЛЬ_АУДИТ@localhost:5432/audit \
       --dim 1024
 
-    # Для русского языка
+Русский корпус:
+
     python3 indexer/tax_code_ingest.py \
       --input data/nk_2026_ru.txt \
       --lang ru \
@@ -364,96 +379,100 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
       --db-url postgresql://aitaxassistent:ВАШ_ПАРОЛЬ_АУДИТ@localhost:5432/audit \
       --dim 1024
 
-Вместо ВАШ_ПАРОЛЬ_АУДИТ вставьте пароль из .env (строка AUDIT_DB_PASSWORD).
+Где `ВАШ_ПАРОЛЬ_АУДИТ` — значение `AUDIT_DB_PASSWORD` из `.env`. `--dim 1024`
+соответствует BGE-M3 (см. `config/rag.yaml`).
 
-Если rag-service ещё не поднял (медленно стартует), подождите минуту и повторите.
+Процесс: парсинг → embedding через `/embed` rag-service → upsert в Qdrant
+(коллекция `tax_code_2026`) → запись `articles_meta` в Postgres. Занимает
+5–15 минут на язык.
 
-Это займёт 5-15 минут. Вы увидите, сколько статей было обработано.
-
-Проверьте:
+Проверка:
 
     docker compose exec audit-db psql -U aitaxassistent -d audit -c "SELECT count(*) FROM articles_meta;"
+    # 100+ строк.
 
-Должно быть 100+ статей.
+    curl -s http://localhost:8093/articles | python3 -m json.tool
+    # список article_numbers из Qdrant.
 
 ---
 
 ## ШАГ 9: Тестовый звонок
 
-Всё готово! Теперь можно звонить.
+Всё готово.
 
-1. Возьмите телефон
-2. Позвоните на номер, который вы настроили в ШАГЕ 5.2
-3. Подскажите, что вы хотите спросить о налогах
-4. AI ответит голосом
+1. Позвоните на номер из ШАГА 5.3.
+2. Задайте вопрос по налогам (русский или казахский).
+3. AI ответит голосом со ссылкой на статью.
 
-Пример диалога:
-- Вы: "Как оплатить налог на доход?"
-- AI: "Для оплаты налога на доход физических лиц (ИПН) вы можете..."
+Пример:
+- Вы: «Как оплатить ИПН за второй квартал?»
+- AI: «Согласно статье 43 НК РК, ИПН уплачивается не позднее 25 числа...»
 
-Если AI не понимает или отвечает неправильно:
-- Проверьте, что модели загружены (ШАГ 7)
-- Проверьте, что НК загружен (ШАГ 8)
-- Посмотрите логи: `docker compose logs -f orchestrator`
+Сложные вопросы (споры, доначисления, обжалование) AI deterministically
+переводит на оператора («Соединяю вас с оператором...»).
+
+Логи в реальном времени:
+
+    docker compose logs -f orchestrator media-gateway
+
+Если AI не понимает или отвечает неверно — проверьте модели (ШАГ 7), индексацию
+(ШАГ 8) и логи.
 
 ---
 
 ## ЧТО ДЕЛАТЬ, ЕСЛИ ЧТО-ТО СЛОМАЛОСЬ
 
-### STT не загружает модель
+### STT не загружает модель (`model_loaded: false`)
 
-Проверьте:
-    nvidia-smi
-    # GPU должен быть виден
+    nvidia-smi                  # GPU виден?
+    docker compose logs stt | tail -30
 
-    docker compose logs stt | tail -20
-    # Посмотрите, что пишет STT
+Частые причины: неверный путь к модели, повреждённая модель, нет драйвера.
 
-Частые причины:
-- Неверный путь к модели
-- Модель повреждена при скачивании
-- Нет NVIDIA-драйвера
-
-Решение:
-    # Перескачайте модель
     rm -rf models/whisper/whisper-large-v3-turbo-FT-kzru
     bash scripts/fetch_models.sh
 
-### LLM не отвечает
+### LLM не отвечает (ошибка 502 от llm-gateway)
 
-Проверьте ключ:
-    nano .env
-    # Убедитесь, что LLM_API_KEY_PRIMARY заполнен
+    nano .env                   # LLM_API_KEY_PRIMARY заполнен?
+    docker compose logs llm-gateway | tail -30
 
-Проверьте логи:
-    docker compose logs llm-gateway | tail -20
-
-Если ошибка 401 - неверный ключ.
-Если ошибка 404 - неверный URL провайдера.
+- `401` — неверный ключ.
+- `404` — неверный `base_url` в `config/llm-gateway.yaml`.
 
 ### RAG не находит статьи
 
-Проверьте, что НК загружен:
     docker compose exec audit-db psql -U aitaxassistent -d audit -c "SELECT count(*) FROM articles_meta;"
+    # если 0 — повторите ШАГ 8.
 
-Если 0 - перезапустите ШАГ 8.
+### Звонки не доходят до AI
 
-### Звонки не приходят
-
-Проверьте Asterisk:
     asterisk -rx "core show channels"
+    asterisk -rx "dialplan show ai-assistant"
+    curl -s http://localhost:8081/health
+    docker compose logs media-gateway | tail -30
 
-Проверьте, что номер настроен правильно (ШАГ 5.2).
+Проверьте, что ARI-пользователь есть (`ari show users`) и `http.conf` слушает
+`0.0.0.0:8088` (контейнер reachает хост через `host.docker.internal`).
 
-### Высокая задержка
+### caller_masked всегда пустой в аудите
 
-Проверьте ресурсы:
+dialplan должен передавать номер: `.../stream/${UNIQUEID}?caller=${CALLERID(num)}`
+(см. `telephony/asterisk_dialplan.conf`). Не перезаписывайте `CALLERID`.
+
+### Высокая задержка / GPU 100%
+
     nvidia-smi
     free -h
     docker stats
 
-Если GPU загружен на 100% - это нормально во время разговора.
-Если RAM почти закончилась - может быть проблема.
+100% GPU во время разговора — нормально. RAM на пределе — проблема.
+
+### Индексация падает на записи в Postgres
+
+- Проверьте пароль в `--db-url` (=`AUDIT_DB_PASSWORD`).
+- Проверьте, что `audit-db` `healthy`: `docker compose ps audit-db`.
+- `articles_meta.lang` принимает `kk`/`ru` — не используйте `kz`.
 
 ---
 
@@ -461,49 +480,55 @@ SIP/101|SIP/102|SIP/103). Если операторов пока нет — ос
 
 ### Если Docker не установлен
 
-    # Установить Docker
     curl -fsSL https://get.docker.com | sh
+    systemctl enable --now docker
+    # compose уже входит в состав Docker (команда `docker compose`).
 
-    # Установить Docker Compose
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
-      -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+### Если NVIDIA-драйвер не установлен (Debian 12)
 
-### Если NVIDIA-драйвер не установлен
+    apt update
+    apt install -y nvidia-driver-535
+    reboot
+    # после перезагрузки: nvidia-smi
 
-    # Для Debian 12
-    sudo apt update
-    sudo apt install -y nvidia-driver-535
-    sudo reboot
+Контейнерам нужен NVIDIA Container Toolkit, чтобы видеть GPU:
 
-    # После перезагрузки проверьте:
-    nvidia-smi
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+      | gpg --dearmor -o /usr/share/keyrings/nvidia.gpg
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+      | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia.gpg] https://#g' \
+      > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    apt update
+    apt install -y nvidia-container-toolkit
+    nvidia-ctk runtime configure
+    systemctl restart docker
+    # проверка: docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi
 
 ### Полезные команды
 
-    # Посмотреть логи всех сервисов
-    docker compose logs -f
+    docker compose logs -f                # логи всех сервисов
+    docker compose logs -f orchestrator   # логи одного сервиса
+    docker compose restart                # перезапуск
+    docker compose down                   # остановить всё
+    docker compose ps                     # статус + health
+    docker stats                          # ресурсы (CPU/RAM)
+    docker compose exec audit-db psql -U aitaxassistent -d audit   # консоль БД
 
-    # Перезапустить всё
-    docker compose restart
+### Метрики (Postgres)
 
-    # Остановить всё
-    docker compose down
-
-    # Проверить использование ресурсов
-    docker stats
+    docker compose exec audit-db psql -U aitaxassistent -d audit \
+      -c "SELECT * FROM v_escalations_daily ORDER BY day DESC LIMIT 14;"
 
 ---
 
-## ГОТОВО!
+## ГОТОВО
 
-Поздравляю! Голосовой AI-ассистент запущен.
+Голосовой AI-ассистент запущен. Он:
+- принимает звонки на ваш номер;
+- понимает вопросы на русском и казахском;
+- ищет ответы в Налоговом кодексе РК 2026 (RAG + rerank);
+- отвечает голосом со ссылкой на статью;
+- передаёт споры/доначисления и нераспознанные вопросы живому оператору.
 
-Теперь он:
-- Принимает звонки по вашему номеру
-- Понимает вопросы на русском и казахском
-- Ищет ответы в Налоговом кодексе РК 2026
-- Отвечает голосом со ссылкой на статью
-- Передаёт сложные вопросы живому оператору
-
-Если что-то не работает или есть вопросы - обращайтесь!
+Все пороги (уверенность STT/LLM, число переспросов, elder-режим, бюджеты
+контекста) меняются без кода в `config/orchestrator.yaml`.

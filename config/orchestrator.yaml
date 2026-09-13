@@ -6,7 +6,10 @@ services:
   audit_worker: http://audit-worker:8096
 
 llm:
-  model_alias: caller            # gateway маршрутизирует по своему списку провайдеров
+  model_alias: aitaxassistent    # gateway маршрутизирует по своему списку провайдеров
+  min_confidence: 0.70           # ниже → эскалация (не «додумывать»)
+  max_retries_invalid: 1         # retry при невалидном JSON/цитате
+  timeout_seconds: 15
 
 session:
   context:
@@ -34,11 +37,6 @@ rag:
   min_rerank_score: 0.30           # ниже → эскалация (no match)
   top_n_vector: 20
   top_n_final: 4
-
-llm:
-  min_confidence: 0.70             # ниже → эскалация (не «додумывать»)
-  max_retries_invalid: 1           # retry при невалидном JSON/цитате
-  timeout_seconds: 15
 
 citation:
   validate: true                   # программа валидирует номера статей

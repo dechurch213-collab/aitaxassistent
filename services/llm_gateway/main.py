@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
 
-CONFIG_PATH = os.environ.get("CONFIG_FILE", "/etc/caller/llm-gateway.yaml")
+CONFIG_PATH = os.environ.get("CONFIG_FILE", "/etc/aitaxassistent/llm-gateway.yaml")
 CFG: dict = {}
 PROVIDERS: list = []
 DOWN: dict = {}

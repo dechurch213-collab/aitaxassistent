@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-CONFIG_PATH = os.environ.get("CONFIG_FILE", "/etc/caller/stt.yaml")
+CONFIG_PATH = os.environ.get("CONFIG_FILE", "/etc/aitaxassistent/stt.yaml")
 engine = None
 
 

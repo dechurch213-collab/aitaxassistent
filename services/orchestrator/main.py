@@ -27,7 +27,7 @@ log = logging.getLogger("orchestrator")
 
 app = FastAPI()
 
-CONFIG_PATH = os.environ.get("CONFIG_FILE", "/etc/caller/orchestrator.yaml")
+CONFIG_PATH = os.environ.get("CONFIG_FILE", "/etc/aitaxassistent/orchestrator.yaml")
 CFG: dict = {}
 HTTP: httpx.AsyncClient = None
 VALIDATOR: ArticleValidator = None
@@ -308,7 +308,7 @@ async def _on_utterance(session, ev):
         if ans.clarification_question:
             await speak(session, ans.clarification_question, session.lang)
             session.turns_count += 1
-            await _audit_turn(session, stt, rag.get("results"), ans, meta, None, None, None)
+            await _audit_turn(session, stt, rag.get("results") if rag else None, ans, meta, None, None, None)
             return
         if ans.escalation_suggested or ans.confidence < CFG["llm"]["min_confidence"]:
             await _escalate(session, "llm_low_confidence")
@@ -318,15 +318,22 @@ async def _on_utterance(session, ev):
         cited = ans.articles_cited or VALIDATOR.extract(ans.answer_text)
         ok, missing = VALIDATOR.validate(cited)
         if CFG["citation"]["validate"] and not ok:
+            # ретрай с ограничением: разрешаем цитировать ТОЛЬКО валидные статьи
+            # из уже названных — не заставляем LLM повторять несуществующие номера
+            valid_cited = [c for c in cited if c not in set(missing)]
+            ok2 = False
             for _ in range(CFG["citation"]["retry_on_invalid"]):
                 log.info("invalid citations %s — retry", missing)
-                ans2, meta2 = await _llm_answer(session, text, fix_citations=cited)
+                ans2, meta2 = await _llm_answer(
+                    session, text, fix_citations=valid_cited
+                )
                 if ans2 is None:
                     await _escalate(session, "llm_unavailable")
                     return
                 cited2 = ans2.articles_cited or VALIDATOR.extract(ans2.answer_text)
-                ok2, _ = VALIDATOR.validate(cited2)
+                ok2, missing2 = VALIDATOR.validate(cited2)
                 ans, meta = ans2, meta2
+                cited, ok, missing = cited2, ok2, missing2
                 if ok2:
                     break
             if not ok2:
@@ -418,7 +425,7 @@ async def _llm_answer(session, text, simplify=False, fix_citations=None):
     messages.append({"role": "user", "content": text})
 
     body = {
-        "model": CFG["llm"].get("model_alias", "caller"),
+        "model": CFG["llm"].get("model_alias", "aitaxassistent"),
         "messages": messages,
         "stream": False,
         "temperature": 0.1,
@@ -466,7 +473,7 @@ async def _compress_history(session):
     if not lines:
         return
     body = {
-        "model": CFG["llm"].get("model_alias", "caller"),
+        "model": CFG["llm"].get("model_alias", "aitaxassistent"),
         "messages": [
             {
                 "role": "user",

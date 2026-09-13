@@ -1,6 +1,8 @@
 import math
 import os
+
 import yaml
+
 
 class SttEngine:
     """faster-whisper: Whisper large-v3-turbo, файнтюн kz/ru, телефонное качество."""

@@ -17,5 +17,5 @@ def _expand_env(obj):
 
 
 def load() -> dict:
-    with open(os.environ.get("CONFIG_FILE", "/etc/caller/media-gateway.yaml"), encoding="utf-8") as f:
+    with open(os.environ.get("CONFIG_FILE", "/etc/aitaxassistent/media-gateway.yaml"), encoding="utf-8") as f:
         return _expand_env(yaml.safe_load(f))

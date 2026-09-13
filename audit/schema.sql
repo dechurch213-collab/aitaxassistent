@@ -120,7 +120,7 @@ CREATE TABLE articles_meta (
     title               TEXT,
     effective_date      DATE,
     cross_refs          TEXT[] DEFAULT '{}',
-    lang                TEXT CHECK (lang IN ('kz','ru'))
+    lang                TEXT CHECK (lang IN ('kk','ru'))
 );
 
 -- Dead-letter очередь аудита (F11)

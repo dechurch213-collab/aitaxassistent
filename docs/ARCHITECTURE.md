@@ -409,7 +409,7 @@ Postgres: `audit-db`. Полный SQL: `audit/schema.sql`.
 ## 8. Структура репозитория
 
 ```
-caller/
+aitaxassistent/
 ├── docker-compose.yml
 ├── .env.example
 ├── config/

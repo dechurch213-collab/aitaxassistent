@@ -6,16 +6,18 @@ services:
 
   media-gateway:
     build: ./services/media_gateway
-    image: caller/media-gateway:latest
+    image: aitaxassistent/media-gateway:latest
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"   # ExternalMedia WS для Asterisk (на хосте); только localhost
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # доступ к Asterisk ARI на хосте
     environment:
-      - CONFIG_FILE=/etc/caller/media-gateway.yaml
+      - CONFIG_FILE=/etc/aitaxassistent/media-gateway.yaml
       - ARI_USER=${ARI_USER}
       - ARI_PASSWORD=${ARI_PASSWORD}
-    ports:
-      - "127.0.0.1:8081:8081"
     volumes:
-      - ./config/media-gateway.yaml:/etc/caller/media-gateway.yaml:ro
+      - ./config/media-gateway.yaml:/etc/aitaxassistent/media-gateway.yaml:ro
       - ./models:/models:ro
     deploy:
       resources:
@@ -28,18 +30,16 @@ services:
 
   stt:
     build: ./services/stt
-    image: caller/stt:latest
+    image: aitaxassistent/stt:latest
     restart: unless-stopped
     environment:
       - MODEL_PATH=/models/whisper/whisper-large-v3-turbo-FT-kzru
       - COMPUTE_TYPE=int8_float16
       - BEAM_SIZE=5
       - DEVICE=cuda
-    ports:
-      - "127.0.0.1:8091:8091"
     volumes:
       - ./models/whisper:/models/whisper:ro
-      - ./config/stt.yaml:/etc/caller/stt.yaml:ro
+      - ./config/stt.yaml:/etc/aitaxassistent/stt.yaml:ro
     deploy:
       resources:
         reservations:
@@ -56,14 +56,12 @@ services:
 
   orchestrator:
     build: ./services/orchestrator
-    image: caller/orchestrator:latest
+    image: aitaxassistent/orchestrator:latest
     restart: unless-stopped
     environment:
-      - CONFIG_FILE=/etc/caller/orchestrator.yaml
-    ports:
-      - "127.0.0.1:8090:8090"
+      - CONFIG_FILE=/etc/aitaxassistent/orchestrator.yaml
     volumes:
-      - ./config/orchestrator.yaml:/etc/caller/orchestrator.yaml:ro
+      - ./config/orchestrator.yaml:/etc/aitaxassistent/orchestrator.yaml:ro
     depends_on:
       - rag-service
       - llm-gateway
@@ -80,17 +78,17 @@ services:
 
   rag-service:
     build: ./services/rag_service
-    image: caller/rag-service:latest
+    image: aitaxassistent/rag-service:latest
     restart: unless-stopped
-    environment:
-      - CONFIG_FILE=/etc/caller/rag.yaml
-      - QDRANT_API_KEY=${QDRANT_API_KEY}
     ports:
-      - "127.0.0.1:8093:8093"
+      - "127.0.0.1:8093:8093"   # только локально — для indexer'а и проверок
+    environment:
+      - CONFIG_FILE=/etc/aitaxassistent/rag.yaml
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
     volumes:
       - ./models/bge-m3:/models/bge-m3:ro
       - ./models/reranker:/models/reranker:ro
-      - ./config/rag.yaml:/etc/caller/rag.yaml:ro
+      - ./config/rag.yaml:/etc/aitaxassistent/rag.yaml:ro
     deploy:
       resources:
         limits: { cpus: "4", memory: 9G }
@@ -103,6 +101,8 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.12.4
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"   # только локально — для indexer'а
     environment:
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
     volumes:
@@ -118,14 +118,12 @@ services:
 
   llm-gateway:
     build: ./services/llm_gateway
-    image: caller/llm-gateway:latest
+    image: aitaxassistent/llm-gateway:latest
     restart: unless-stopped
     environment:
-      - CONFIG_FILE=/etc/caller/llm-gateway.yaml
-    ports:
-      - "127.0.0.1:8094:8094"
+      - CONFIG_FILE=/etc/aitaxassistent/llm-gateway.yaml
     volumes:
-      - ./config/llm-gateway.yaml:/etc/caller/llm-gateway.yaml:ro
+      - ./config/llm-gateway.yaml:/etc/aitaxassistent/llm-gateway.yaml:ro
     deploy:
       resources:
         limits: { cpus: "1", memory: 512M }
@@ -137,16 +135,14 @@ services:
 
   tts:
     build: ./services/tts
-    image: caller/tts:latest
+    image: aitaxassistent/tts:latest
     restart: unless-stopped
     environment:
       - MODELS_DIR=/models/piper
-      - CONFIG_FILE=/etc/caller/tts.yaml
-    ports:
-      - "127.0.0.1:8095:8095"
+      - CONFIG_FILE=/etc/aitaxassistent/tts.yaml
     volumes:
       - ./models/piper:/models/piper:ro
-      - ./config/tts.yaml:/etc/caller/tts.yaml:ro
+      - ./config/tts.yaml:/etc/aitaxassistent/tts.yaml:ro
     deploy:
       resources:
         limits: { cpus: "2", memory: 2G }
@@ -161,7 +157,7 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_DB=audit
-      - POSTGRES_USER=caller
+      - POSTGRES_USER=aitaxassistent
       - POSTGRES_PASSWORD=${AUDIT_DB_PASSWORD}
     ports:
       - "127.0.0.1:5432:5432"   # только локально — для indexer'а и проверок
@@ -172,17 +168,17 @@ services:
       resources:
         limits: { cpus: "1", memory: 1G }
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U caller -d audit"]
+      test: ["CMD-SHELL", "pg_isready -U aitaxassistent -d audit"]
       interval: 10s
       timeout: 3s
       retries: 5
 
   audit-worker:
     build: ./services/audit_worker
-    image: caller/audit-worker:latest
+    image: aitaxassistent/audit-worker:latest
     restart: unless-stopped
     environment:
-      - AUDIT_DB_URL=postgresql://caller:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
+      - AUDIT_DB_URL=postgresql://aitaxassistent:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
       - INGEST_PORT=8096
     depends_on:
       audit-db:
@@ -197,4 +193,4 @@ volumes:
 
 networks:
   default:
-    name: caller_net
+    name: aitaxassistent_net
