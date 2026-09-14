@@ -55,11 +55,7 @@ class SttEngine:
         words = []
         for s in segs:
             for w in s.words or []:
-                conf = (
-                    round(max(0.0, min(1.0, math.exp(w.avg_logprob))), 4)
-                    if w.avg_logprob is not None
-                    else 0.0
-                )
+                conf = round(max(0.0, min(1.0, w.probability)), 4) if w.probability is not None else 0.0
                 words.append(
                     {"w": w.word, "c": conf, "t0": round(w.start, 3), "t1": round(w.end, 3)}
                 )
