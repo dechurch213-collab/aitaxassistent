@@ -7,12 +7,12 @@ embedding:
   normalize: true
 
 reranker:
-  # gpu-4b:   Qwen3-Reranker-4B int8 на RTX 3050 (рекомендуемый старт)
+  # gpu-4b:   Qwen3-Reranker-4B int8 на RTX 3050 (для лучшей скорости, но у нас нет места)
   # cpu-8b:   Qwen3-Reranker-8B на CPU (1.5-3 с на 20 docs)
   # cpu-4b:   Qwen3-Reranker-4B на CPU
-  profile: gpu-4b
+  profile: cpu-4b
   model_path: /models/reranker
-  device: cuda                 # cpu для cpu-8b/cpu-4b профилей
+  device: cpu                 # cpu для cpu-8b/cpu-4b профилей
   max_length: 512
   instruction: "Rank relevant articles of the Tax Code of the Republic of Kazakhstan (2026) for the given query."
 
