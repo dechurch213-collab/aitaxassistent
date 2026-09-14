@@ -35,7 +35,7 @@ def _startup():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         CFG = yaml.safe_load(f)
     from embedder import Embedder
-    from qdrant_client import QdrantStore
+    from qdrant_store import QdrantStore
     from reranker import Qwen3Reranker
 
     e = CFG.get("embedding", {})
